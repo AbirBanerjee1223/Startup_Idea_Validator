@@ -8,13 +8,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Keys
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Model Settings
-MODEL_NAME = "llama3-8b-8192"
+MODEL_NAME = "gemini-pro-latest"
 TEMPERATURE = 0.2
-MAX_TOKENS = 6000
 
 # Agent Settings
 DEFAULT_MEMORY_KEY = "chat_history"

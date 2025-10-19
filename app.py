@@ -44,7 +44,7 @@ def main():
     st.markdown(STREAMLIT_DESCRIPTION)
     
     # Warning about processing time
-    st.warning("⚠️ This application uses Llama-3-8B model, which may take 3-5 minutes to generate a complete report. Please be patient during processing.")
+    st.warning("⚠️ This application uses the Gemini API, which may take a moment to generate a complete report. Please be patient during processing.")
     
     # Input form
     with st.form("startup_idea_form"):
@@ -59,7 +59,7 @@ def main():
     
     # Process on submit
     if submit_button and startup_idea:
-        with st.spinner("Our AI agents are analyzing your startup idea... This may take 3-5 minutes with the Llama model."):
+        with st.spinner("Our AI agents are analyzing your startup idea... This may take a moment with the Gemini model."):
             try:
                 # Create progress bar
                 progress_bar = st.progress(0)
