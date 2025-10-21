@@ -1,20 +1,17 @@
-"""
-Report Generator Agent for the Startup Idea Validator.
-"""
+import json
 from . import BaseAgent
 from utils.prompts import REPORT_GENERATOR_PROMPT
-from utils.pdf_generator import create_pdf_report
-
+from utils.pdf_generator import create_pdf_report 
 
 class ReportGenerator(BaseAgent):
     """
-    Agent responsible for compiling all findings into a concise evaluation report.
+    Agent responsible for compiling all findings and generating the final structured report.
     """
     
     def __init__(self):
         super().__init__(
             name="Report Generator",
-            role_description="Compiles all findings into a concise evaluation report",
+            role_description="Compiles all findings into a final JSON report",
             prompt_template=REPORT_GENERATOR_PROMPT
         )
 
@@ -24,29 +21,46 @@ class ReportGenerator(BaseAgent):
         Generate a comprehensive report based on all analyses.
         
         Args:
-            startup_idea (str): The original startup idea
-            idea_analysis (str): The analyzed startup idea
-            market_research (str): Market research findings
-            business_strategy (str): Business strategy including SWOT
-            financial_model (str): Financial model and monetization strategies
-            risk_assessment (str): Risk assessment report
+            All ..._analysis args are now Python dictionaries (from loaded JSON)
             
         Returns:
-            tuple: (report_content, report_file_path)
+            tuple: (final_report_dict, pdf_file_path)
         """
-        combined_input = (
-            f"ORIGINAL STARTUP IDEA:\n{startup_idea}\n\n"
-            f"IDEA ANALYSIS:\n{idea_analysis}\n\n"
-            f"MARKET RESEARCH:\n{market_research}\n\n"
-            f"BUSINESS STRATEGY:\n{business_strategy}\n\n"
-            f"FINANCIAL MODEL:\n{financial_model}\n\n"
-            f"RISK ASSESSMENT:\n{risk_assessment}"
-        )
         
-        # Generate the consolidated report
-        report_content = self.run(combined_input)
+        # Combine all the structured data into one big dictionary
+        full_analysis_dict = {
+            "startup_idea": startup_idea,
+            "idea_overview": idea_analysis,
+            "market_landscape": market_research,
+            "business_strategy": business_strategy,
+            "financial_outlook": financial_model,
+            "risk_assessment": risk_assessment
+        }
         
-        # Create PDF file
-        report_file_path = create_pdf_report(startup_idea, report_content)
+        # Convert the dictionary to a JSON string to pass to the LLM
+        combined_input_json = json.dumps(full_analysis_dict, indent=2)
         
-        return report_content, report_file_path
+        # Generate the final JSON (summary, verdict, rating, recommendations)
+        final_report_json_string = self.run(combined_input_json)
+        
+        # Parse the final report
+        final_report_dict = json.loads(final_report_json_string)
+        
+        # --- PDF Generation ---
+        # Create a simple markdown string for the PDF
+        pdf_markdown = f"# {final_report_dict.get('title', 'Startup Idea Validation Report')}\n\n"
+        pdf_markdown += f"## Executive Summary\n{final_report_dict.get('executive_summary', '')}\n\n"
+        pdf_markdown += f"## Final Verdict\n**Rating: {final_report_dict.get('overall_viability_rating', 'N/A')}/10**\n{final_report_dict.get('final_verdict', '')}\n\n"
+        pdf_markdown += f"## Recommendations\n" + "\n".join(f"- {rec}" for rec in final_report_dict.get('recommendations', []))
+        # You would add the other sections here if needed for the PDF
+        
+        report_file_path = create_pdf_report(startup_idea, pdf_markdown)
+        
+        # --- Return BOTH the full structured data and the final summary data ---
+        
+        master_report_dict = {
+            "summary_data": final_report_dict,
+            "detailed_data": full_analysis_dict
+        }
+        
+        return master_report_dict, report_file_path
