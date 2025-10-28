@@ -1,23 +1,18 @@
 """
 Main application module for the Startup Idea Validator.
 """
-import os
 import logging
 import json
-from datetime import datetime
-
 from agents.idea_analyst import IdeaAnalyst
 from agents.market_researcher import MarketResearcher
 from agents.business_strategist import BusinessStrategist
 from agents.financial_modeler import FinancialModeler
 from agents.risk_assessor import RiskAssessor
 from agents.report_generator import ReportGenerator
+from utils.pdf_generator import create_pdf_report # Import the PDF generator
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -36,80 +31,75 @@ class StartupIdeaValidator:
     
     def validate_idea(self, startup_idea):
         """
-        Run the complete validation process on a startup idea.
-        
-        Args:
-            startup_idea (str): The raw startup idea to validate
-            
-        Returns:
-            tuple: (master_report_dict, pdf_file_path)
+        Run the complete validation process. This is a generator that yields status updates.
         """
         logger.info(f"Starting validation for idea: {startup_idea[:50]}...")
 
-        def run_and_parse(agent, input_text):
-            """Helper to run an agent and parse its JSON output."""
+        def run_agent(agent, input_data):
+            """Helper function to run an agent and handle data formats."""
+            if isinstance(input_data, dict):
+                input_str = json.dumps(input_data, indent=2)
+            else:
+                input_str = input_data
+            
             try:
-                response_str = agent.run(input_text)
-                # Clean the response string before parsing
-                # LLMs can sometimes wrap JSON in ```json ... ```
-                if response_str.strip().startswith("```json"):
-                    response_str = response_str.strip()[7:-3].strip()
-                return json.loads(response_str)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON from {agent.name}: {e}")
-                logger.error(f"Raw response was: {response_str}")
-                return {"error": f"Agent {agent.name} returned invalid JSON.", "raw_response": response_str}
+                response_dict = agent.run(input_str)
+                return response_dict
             except Exception as e:
-                logger.error(f"An unexpected error occurred with agent {agent.name}: {e}")
-                return {"error": f"An unexpected error occurred with agent {agent.name}."}
-
+                logger.error(f"An error occurred with agent {agent.name}: {e}")
+                return {"error": f"An error occurred with agent {agent.name}.", "details": str(e)}
 
         # Step 1: Analyze the idea
-        logger.info("Step 1: Analyzing idea with Idea Analyst...")
-        idea_analysis = run_and_parse(self.idea_analyst, startup_idea)
+        yield "Analyzing idea..."
+        idea_analysis = run_agent(self.idea_analyst, startup_idea)
         
         # Step 2: Research the market
-        logger.info("Step 2: Researching market with Market Researcher...")
-        market_research = run_and_parse(self.market_researcher, json.dumps(idea_analysis))
+        yield "Researching market..."
+        market_research = run_agent(self.market_researcher, idea_analysis)
         
         # Step 3: Develop business strategy
-        logger.info("Step 3: Developing strategy with Business Strategist...")
+        yield "Developing strategy..."
         strategy_input = {"idea": idea_analysis, "market": market_research}
-        business_strategy = run_and_parse(self.business_strategist, json.dumps(strategy_input))
+        business_strategy = run_agent(self.business_strategist, strategy_input)
         
         # Step 4: Create financial model
-        logger.info("Step 4: Creating financial model with Financial Modeler...")
+        yield "Modeling financials..."
         financial_input = {"idea": idea_analysis, "market": market_research, "strategy": business_strategy}
-        financial_model = run_and_parse(self.financial_modeler, json.dumps(financial_input))
+        financial_model = run_agent(self.financial_modeler, financial_input)
         
         # Step 5: Assess risks
-        logger.info("Step 5: Assessing risks with Risk Assessor...")
+        yield "Assessing risks..."
         risk_input = {"idea": idea_analysis, "market": market_research, "strategy": business_strategy, "financials": financial_model}
-        risk_assessment = run_and_parse(self.risk_assessor, json.dumps(risk_input))
+        risk_assessment = run_agent(self.risk_assessor, risk_input)
         
-        # Step 6: Generate final report (pass Python dicts, not JSON strings)
-        logger.info("Step 6: Generating final report with Report Generator...")
-        master_report_dict, report_path = self.report_generator.generate_report(
-            startup_idea, idea_analysis, market_research, 
-            business_strategy, financial_model, risk_assessment
-        )
-        logger.info(f"Report generation complete. Report saved to: {report_path}")
+        # Step 6: Generate final report summary
+        yield "Generating final report..."
+        report_input_data = {
+            "startup_idea": startup_idea, "idea_overview": idea_analysis, "market_landscape": market_research,
+            "business_strategy": business_strategy, "financial_outlook": financial_model, "risk_assessment": risk_assessment
+        }
+        final_summary_data = run_agent(self.report_generator, report_input_data)
+
+        # Assemble the final master dictionary for the UI
+        master_report_dict = {
+            "summary_data": final_summary_data,
+            "detailed_data": report_input_data
+        }
         
-        return master_report_dict, report_path
+        # --- THIS IS THE FIX ---
+        # Call the PDF generator with the single master dictionary argument it expects.
+        logger.info("Generating PDF report...")
+        report_path = create_pdf_report(master_report_dict)
+        logger.info(f"Report generation complete. PDF saved to: {report_path}")
+        
+        # Yield the final tuple for the Streamlit app
+        yield master_report_dict, report_path
 
 
 def validate_startup_idea(idea_text):
-    """
-    Convenience function to validate a startup idea.
-    
-    Args:
-        idea_text (str): The startup idea to validate
-        
-    Returns:
-        tuple: (master_report_dict, pdf_file_path)
-    """
+    """Convenience function that yields from the validator."""
     validator = StartupIdeaValidator()
-    return validator.validate_idea(idea_text)
+    return (yield from validator.validate_idea(idea_text))
 
 
 if __name__ == "__main__":
