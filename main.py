@@ -9,7 +9,8 @@ from agents.business_strategist import BusinessStrategist
 from agents.financial_modeler import FinancialModeler
 from agents.risk_assessor import RiskAssessor
 from agents.report_generator import ReportGenerator
-from utils.pdf_generator import create_pdf_report # Import the PDF generator
+from utils.pdf_generator import create_pdf_report 
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -52,25 +53,30 @@ class StartupIdeaValidator:
         # Step 1: Analyze the idea
         yield "Analyzing idea..."
         idea_analysis = run_agent(self.idea_analyst, startup_idea)
+        time.sleep(31)
         
         # Step 2: Research the market
         yield "Researching market..."
         market_research = run_agent(self.market_researcher, idea_analysis)
+        time.sleep(31)
         
         # Step 3: Develop business strategy
         yield "Developing strategy..."
         strategy_input = {"idea": idea_analysis, "market": market_research}
         business_strategy = run_agent(self.business_strategist, strategy_input)
+        time.sleep(31)
         
         # Step 4: Create financial model
         yield "Modeling financials..."
         financial_input = {"idea": idea_analysis, "market": market_research, "strategy": business_strategy}
         financial_model = run_agent(self.financial_modeler, financial_input)
+        time.sleep(31)
         
         # Step 5: Assess risks
         yield "Assessing risks..."
         risk_input = {"idea": idea_analysis, "market": market_research, "strategy": business_strategy, "financials": financial_model}
         risk_assessment = run_agent(self.risk_assessor, risk_input)
+        time.sleep(31)
         
         # Step 6: Generate final report summary
         yield "Generating final report..."

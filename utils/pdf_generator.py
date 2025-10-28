@@ -1,6 +1,7 @@
 """
 PDF report generation utility for the Startup Idea Validator.
-This version includes Unicode font support with stable CDN links to handle emojis and special characters.
+This version REMOVES all font downloading and sanitizes text
+to be compatible with the built-in latin-1 font, preventing crashes.
 """
 
 import os
@@ -8,136 +9,87 @@ import time
 from fpdf import FPDF
 import re
 import json
-import requests
 
 from config import OUTPUT_DIR
 
-def setup_fonts(pdf):
-    """Downloads and adds Unicode-compatible fonts from a stable CDN to the FPDF instance."""
-    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
-    os.makedirs(font_dir, exist_ok=True)
-    
-    # --- THIS IS THE FIX ---
-    # These URLs point to a reliable CDN (jsDelivr) instead of raw GitHub, which is more stable.
-    font_files = {
-        "NotoSans-Regular.ttf": "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Regular.ttf",
-        "NotoSans-Bold.ttf": "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Bold.ttf",
-        "NotoSans-Italic.ttf": "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Italic.ttf"
-    }
-
-    for font_file, url in font_files.items():
-        path = os.path.join(font_dir, font_file)
-        if not os.path.exists(path):
-            print(f"Downloading font: {font_file}...")
-            try:
-                response = requests.get(url, allow_redirects=True, timeout=10)
-                response.raise_for_status()
-                with open(path, 'wb') as f:
-                    f.write(response.content)
-            except requests.RequestException as e:
-                print(f"Warning: Could not download font {font_file}. PDF may have rendering issues. Error: {e}")
-                return False
-
-    try:
-        pdf.add_font('NotoSans', '', os.path.join(font_dir, "NotoSans-Regular.ttf"), uni=True)
-        pdf.add_font('NotoSans', 'B', os.path.join(font_dir, "NotoSans-Bold.ttf"), uni=True)
-        pdf.add_font('NotoSans', 'I', os.path.join(font_dir, "NotoSans-Italic.ttf"), uni=True)
-        pdf.set_font('NotoSans', '', 11)
-        return True
-    except Exception as e:
-        print(f"Warning: Could not load fonts. PDF may have rendering issues. Error: {e}")
-        pdf.set_font('Arial', '', 11) # Fallback to Arial if loading fails
-        return False
-
+def sanitize_text(text):
+    """
+    Removes all non-latin-1 characters to prevent PDF generation errors.
+    This will strip emojis, special currency symbols (like ₹), etc.
+    """
+    return text.encode('latin-1', 'ignore').decode('latin-1')
 
 def write_pretty_json(pdf, data):
     """
-    Intelligently formats and writes a dictionary to the PDF.
-    Handles nested dictionaries, lists, and simple key-value pairs.
+    Intelligently formats and writes a dictionary to the PDF,
+    sanitizing all text for latin-1.
     """
-    pdf.set_font('NotoSans' if pdf.has_unicode_support else 'Arial', '', 10)
+    pdf.set_font('Arial', '', 10)
     
     if not isinstance(data, dict):
-        pdf.write_body(str(data))
+        pdf.write_body(str(data)) # write_body will sanitize
         return
 
     for key, value in data.items():
-        # --- Heading for the key ---
-        pdf.set_font('NotoSans' if pdf.has_unicode_support else 'Arial', 'B', 11)
-        # Clean up the key for display (e.g., "market_size" -> "Market Size")
+        pdf.set_font('Arial', 'B', 11)
         display_key = key.replace('_', ' ').title()
-        pdf.cell(0, 7, display_key, 0, 1)
+        pdf.cell(0, 7, sanitize_text(display_key), 0, 1)
         
-        # --- Value formatting ---
-        pdf.set_font('NotoSans' if pdf.has_unicode_support else 'Arial', '', 10)
+        pdf.set_font('Arial', '', 10)
         
         if isinstance(value, list):
-            # Handle lists (like competitors, market trends)
             for item in value:
-                if isinstance(item, dict): # Handle list of objects (like monetization models)
+                if isinstance(item, dict):
                     for sub_key, sub_val in item.items():
-                         pdf.multi_cell(0, 5, f"  - {sub_key.title()}: {sub_val}")
+                         pdf.multi_cell(0, 5, sanitize_text(f"  - {sub_key.title()}: {sub_val}"))
                     pdf.ln(2)
-                else: # Handle list of strings
-                    pdf.multi_cell(0, 5, f"- {item}")
+                else:
+                    pdf.multi_cell(0, 5, sanitize_text(f"- {item}"))
             pdf.ln(3)
-
         elif isinstance(value, dict):
-            # Handle nested dictionaries (like target_market_profile)
             for sub_key, sub_val in value.items():
-                pdf.multi_cell(0, 5, f"  - {sub_key.title()}: {sub_val}")
+                pdf.multi_cell(0, 5, sanitize_text(f"  - {sub_key.title()}: {sub_val}"))
             pdf.ln(3)
-        
         else:
-            # Handle simple string/number values
-            pdf.multi_cell(0, 5, str(value))
+            pdf.multi_cell(0, 5, sanitize_text(str(value)))
             pdf.ln(3)
 
 class PDF(FPDF):
-    """Custom PDF class to handle headers, footers, and chapter titles."""
+    """Custom PDF class, uses built-in Arial font ONLY."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.startup_name = "Startup Idea"
-        self.has_unicode_support = setup_fonts(self)
+        self.set_font('Arial', '', 11) # Set default font
 
-    # --- (header, footer, chapter_title, etc. are unchanged) ---
     def set_startup_name(self, name):
-        self.startup_name = name
+        self.startup_name = sanitize_text(name)
 
     def header(self):
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'B', 12)
+        self.set_font('Arial', 'B', 12)
         self.cell(0, 10, 'Startup Idea Validator Report', 0, 1, 'C')
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'I', 8)
+        self.set_font('Arial', 'I', 8)
         self.cell(0, 5, f'Idea: {self.startup_name}', 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'I', 8)
+        self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
     def chapter_title(self, title):
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'B', 16)
+        self.set_font('Arial', 'B', 16)
         self.set_fill_color(240, 240, 240)
-        self.cell(0, 12, f' {title}', 0, 1, 'L', fill=True)
+        self.cell(0, 12, f' {sanitize_text(title)}', 0, 1, 'L', fill=True)
         self.ln(4)
-        
-    def _write_unicode(self, method, text):
-        """Helper to write text, falling back if unicode fails."""
-        if self.has_unicode_support:
-            method(text)
-        else:
-            fallback_text = text.encode('latin-1', 'replace').decode('latin-1')
-            method(fallback_text)
 
     def sub_heading(self, title):
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'B', 12)
-        self._write_unicode(lambda t: self.cell(0, 8, t, 0, 1, 'L'), title)
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 8, sanitize_text(title), 0, 1, 'L')
         self.ln(2)
 
     def write_body(self, text):
-        self.set_font('NotoSans' if self.has_unicode_support else 'Arial', '', 11)
-        self._write_unicode(lambda t: self.multi_cell(0, 5, t), text)
+        self.set_font('Arial', '', 11)
+        self.multi_cell(0, 5, sanitize_text(text))
         self.ln()
 
     def add_swot(self, swot_data):
@@ -145,11 +97,11 @@ class PDF(FPDF):
             write_pretty_json(self, swot_data); return
         
         for section, items in swot_data.items():
-            self.set_font('NotoSans' if self.has_unicode_support else 'Arial', 'B', 11)
-            self.cell(0, 7, section.title(), 0, 1)
-            self.set_font('NotoSans' if self.has_unicode_support else 'Arial', '', 10)
+            self.set_font('Arial', 'B', 11)
+            self.cell(0, 7, sanitize_text(section.title()), 0, 1)
+            self.set_font('Arial', '', 10)
             text = "\n".join(f"- {s}" for s in items)
-            self._write_unicode(lambda t: self.multi_cell(0, 5, t), text)
+            self.multi_cell(0, 5, sanitize_text(text))
             self.ln(2)
 
     def add_risks(self, risks_data):
@@ -162,7 +114,7 @@ class PDF(FPDF):
             elif rating == "medium": self.set_text_color(255, 165, 0)
             else: self.set_text_color(70, 130, 180)
             
-            self.sub_heading(f"{risk.get('category')} ({rating.title()} Risk)")
+            self.sub_heading(f"{sanitize_text(risk.get('category'))} ({sanitize_text(rating.title())} Risk)")
             self.set_text_color(0, 0, 0)
             self.write_body(f"**Risk:** {risk.get('risk', 'N/A')}\n**Mitigation:** {risk.get('mitigation', 'N/A')}")
             self.ln(2)
@@ -185,8 +137,8 @@ def create_pdf_report(master_report_dict):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    pdf.set_font('NotoSans' if pdf.has_unicode_support else 'Arial', 'B', 24)
-    pdf.cell(0, 15, title, 0, 1, "C")
+    pdf.set_font('Arial', 'B', 24)
+    pdf.cell(0, 15, sanitize_text(title), 0, 1, "C")
     pdf.ln(5)
 
     pdf.chapter_title("Executive Summary")
@@ -194,7 +146,7 @@ def create_pdf_report(master_report_dict):
 
     pdf.chapter_title("Final Verdict & Rating")
     rating = summary_data.get('overall_viability_rating', 0)
-    pdf.set_font('NotoSans' if pdf.has_unicode_support else 'Arial', 'B', 14)
+    pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, f"Overall Viability Rating: {rating} / 10", 0, 1, "L")
     pdf.write_body(summary_data.get("final_verdict", "No verdict provided."))
 
@@ -202,9 +154,6 @@ def create_pdf_report(master_report_dict):
     recs = summary_data.get("recommendations", [])
     for i, rec in enumerate(recs, 1):
         pdf.write_body(f"{i}. {rec}")
-    
-    # --- THIS IS THE FIX ---
-    # Replace all `pdf.write_json_data` with `write_pretty_json`
     
     pdf.add_page()
     pdf.chapter_title("Detailed Analysis")
@@ -229,11 +178,13 @@ def create_pdf_report(master_report_dict):
     filepath = os.path.join(OUTPUT_DIR, filename)
     
     try:
+        # We sanitize *all text* before output, so this should not fail.
         pdf.output(filepath)
     except Exception as e:
         print(f"ERROR generating PDF: {e}")
+        # Fallback to a simple text file if PDF generation fails
         filepath_txt = filepath.replace(".pdf", ".txt")
-        with open(filepath_txt, "w", encoding='utf-8') as f: # Added encoding
+        with open(filepath_txt, "w", encoding='utf-8') as f:
             f.write(json.dumps(master_report_dict, indent=2))
         return filepath_txt
         
